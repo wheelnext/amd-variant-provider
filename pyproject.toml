@@ -1,0 +1,22 @@
+[build-system]
+requires = ["flit_core >=3.11,<4"]
+build-backend = "flit_core.buildapi"
+
+[project]
+name = "amd-variant-provider"
+authors = [{ name = "Jithun Nair", email = "jithun.nair@amd.com" }]
+maintainers = [
+    { name = "Jithun Nair", email = "jithun.nair@amd.com" },
+    { name = "Jeff Daily", email = "jeff.daily@amd.com" },
+]
+license = "MIT"
+license-files = ["LICENSE"]
+readme = "README.md"
+requires-python = ">=3.9"
+dynamic = ["version", "description"]
+
+[project.urls]
+Home = "https://github.com/wheelnext/amd-variant-provider/"
+
+[project.entry-points.variant_plugins]
+amd_variant_provider = "amd_variant_provider.plugin:AMDVariantPlugin"
