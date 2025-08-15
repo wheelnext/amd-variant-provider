@@ -38,6 +38,9 @@ def _get_info_from_rocminfo() -> Dict[str, Any]:
 
     # Regex for ROCm version and GFX name
     ROCM_VERSION_REGEX = re.compile(r"ROCm Version:\s*(\d+)\.(\d+)")
+    # MI and Navi
+    # https://github.com/pytorch/pytorch/blob/4d5f92aa39d294a833038299aa3f38f99ebc31b6/.ci/docker/manywheel/build.sh#L86
+    # Also refer to https://d2awnip2yjpvqn.cloudfront.net/v2 (internal only?)
     GFX_NAME_REGEX = re.compile(r"^\s*Name:\s+(gfx\d+[0-9a-f]*)", re.MULTILINE)
 
     info = {}
@@ -61,10 +64,12 @@ def _get_info_from_rocminfo() -> Dict[str, Any]:
         # Find all unique GFX versions
         gfx_matches = GFX_NAME_REGEX.findall(output)
         if gfx_matches:
+            GFX_CODE=["gfx900", "gfx906", "gfx908", "gfx90a", "gfx942", "gfx1030", "gfx1100", "gfx1101", "gfx1102", "gfx1200", "gfx1201"]
             # Use a set to store unique GFX versions, then sort for deterministic output
             unique_gfx = sorted(list(set(gfx_matches)))
-            info['gfx_versions'] = unique_gfx
-            _log(f"Found GFX architectures: {unique_gfx} via rocminfo.")
+            if all(x in GFX_CODE for x in unique_gfx):
+                info['gfx_versions'] = unique_gfx
+                _log(f"Found GFX architectures: {unique_gfx} via rocminfo.")
 
     except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as e:
         _log(f"Could not run or parse `rocminfo`: {e}")
