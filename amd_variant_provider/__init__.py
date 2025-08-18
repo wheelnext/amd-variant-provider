@@ -18,7 +18,5 @@ from .plugin import get_variants
 # Requiring external Python dependencies may create a chicken-and-egg problem:
 # the variant provider runs before pip installs packages,
 # so it cannot rely on pip to install its own dependencies.
-AMD_VARIANT_PROVIDER_ENTRY_POINT = "amd_variant_provider.plugin:get_variants"
-
-__all__ = ["get_variants", "AMD_VARIANT_PROVIDER_ENTRY_POINT"]
+__all__ = ["get_variants"]
 __version__ = "0.0.1"

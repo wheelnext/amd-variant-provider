@@ -64,6 +64,7 @@ def _get_info_from_rocminfo() -> Dict[str, Any]:
         # Find all unique GFX versions
         gfx_matches = GFX_NAME_REGEX.findall(output)
         if gfx_matches:
+            # Not future-proof
             GFX_CODE=["gfx900", "gfx906", "gfx908", "gfx90a", "gfx942", "gfx1030", "gfx1100", "gfx1101", "gfx1102", "gfx1200", "gfx1201"]
             # Use a set to store unique GFX versions, then sort for deterministic output
             unique_gfx = sorted(list(set(gfx_matches)))

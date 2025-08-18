@@ -1,39 +1,27 @@
+# Defines the build system (e.g., Flit, Setuptools) that will package the code.
+# This section is mandatory in a "pyproject.toml" file
 [build-system]
 requires = ["flit_core >=3.11,<4"]
 build-backend = "flit_core.buildapi"
 
+# Contains all the project metadata, dependencies, and the entry point.
 [project]
 name = "amd-variant-provider"
-authors = [{ name = "Jithun Nair", email = "jithun.nair@amd.com" }]
+authors = [{ name = "WheelNext Community" }]
 maintainers = [
     { name = "Jithun Nair", email = "jithun.nair@amd.com" },
     { name = "Jeff Daily", email = "jeff.daily@amd.com" },
+    { name = "Glen Cao", email = "glen.cao@amd.com" },
 ]
-license = "MIT"
+license = { text = "MIT" }  # Modern way to specify a standard license
 license-files = ["LICENSE"]
 readme = "README.md"
 requires-python = ">=3.9"
+urls = { Home = "https://github.com/wheelnext/amd-variant-provider/" }
+# The version and description can be stored here or dynamically in __init__.py.
 dynamic = ["version", "description"]
 
-[project.urls]
-Home = "https://github.com/wheelnext/amd-variant-provider/"
-
-[project.entry-points.variant_plugins]
-amd_variant_provider = "amd_variant_provider.plugin:AMDVariantPlugin"
-
-"""
-[metadata]
-name = amd-variant-provider
-version = 0.0.1
-author = WheelNext Community
-description = A WheelNext variant provider for AMD ROCm.
-
-[options]
-packages = find:
-python_requires = >=3.8
-
-[options.entry_points]
-# This registers the provider with the 'wheel.variant_providers' group
-wheel.variant_providers =
-    amd = amd_variant_provider:AMD_VARIANT_PROVIDER_ENTRY_POINT
-"""
+# As the WheelNext initiative matured and the specification was finalized for integration with the official `wheel` and `pip` tools, the name was changed to "wheel.variant_providers".
+# This makes it explicitly clear that this is a plugin for the `wheel` tool.
+[project.entry-points."wheel.variant_plugins"]
+amd_variant_provider = "amd_variant_provider:get_variants"
