@@ -11,6 +11,8 @@ TODO:
 Flexibility and abstraction similar to NVIDIA's
 """
 
+from __future__ import annotations
+import logging
 import sys
 from typing import Any, List
 
@@ -34,8 +36,8 @@ def get_variants(context: Any) -> List[str]:
     system_info = get_system_info()
     
     variants = []
-    rocm_version = system_info.get('rocm_version')
-    gfx_versions = system_info.get('gfx_versions')
+    rocm_version = system_info.get("rocm_version")
+    gfx_versions = system_info.get("gfx_versions", [])
 
     if rocm_version:
         major, minor = rocm_version

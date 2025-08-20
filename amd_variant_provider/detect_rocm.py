@@ -12,13 +12,20 @@ Based on the "Right Tool for the Job" principle, using `pyrsmi` for now for this
 The current method relies on the `rocminfo` command which is standard in any ROCm install.
 """
 
+from __future__ import annotations
+import logging
 import os
+import platform
 import re
 import sys
-import platform
 import subprocess
 from pathlib import Path
 from typing import Optional, Tuple, List, Dict, Any
+
+logger = logging.getLogger(__name__)
+
+# Module-level cache to avoid repeated subprocess calls in the same process
+_CACHE: Dict[str, Any] = {}
 
 def _log(msg: str):
     """Logs a message to stderr for debugging purposes."""
@@ -36,21 +43,25 @@ def _get_info_from_rocminfo() -> Dict[str, Any]:
     if platform.system() != "Linux":
         return {}
 
-    # Regex for ROCm version and GFX name
-    ROCM_VERSION_REGEX = re.compile(r"ROCm Version:\s*(\d+)\.(\d+)")
+    # Regex for ROCm version (like "5.7" or "6.4.3", only major/minor)
+    ROCM_VERSION_REGEX = re.compile(r"ROCm(?:\s+Version)?[:\s]*(\d+)\.(\d+)(?:\.\d+)?", re.IGNORECASE)
+    #ROCM_VERSION_REGEX = re.compile(r"(\d+)\.(\d+)")
     # MI and Navi
     # https://github.com/pytorch/pytorch/blob/4d5f92aa39d294a833038299aa3f38f99ebc31b6/.ci/docker/manywheel/build.sh#L86
     # Also refer to https://d2awnip2yjpvqn.cloudfront.net/v2 (internal only?)
-    GFX_NAME_REGEX = re.compile(r"^\s*Name:\s+(gfx\d+[0-9a-f]*)", re.MULTILINE)
+    #
+    # Moreover, RegEx inspired by https://github.com/ROCm/rocminfo/blob/c34ac33d661bd2c87d9c3b956eb8b15ac8f7092c/rocm_agent_enumerator#L95
+    #GFX_REGEX = re.compile(r"^\s*Name:\s+(gfx\d+[0-9a-f]*)", re.MULTILINE)
+    GFX_REGEX = re.compile(r"(gfx[0-9a-fA-F]+(?:-[0-9a-fA-F]+)?(?:-generic)?(?:[:][-+:\w]+)?)")
 
     info = {}
     try:
         # The `rocminfo` tool is one of the standard ways to get system-level ROCm details.
         output = subprocess.check_output(
             ["rocminfo"],
-            capture_output=True,
             text=True,
             check=True,
+            stderr=subprocess.DEVNULL,
             timeout=10, # Increased timeout slightly for potentially long output
         )
 
@@ -62,7 +73,7 @@ def _get_info_from_rocminfo() -> Dict[str, Any]:
             _log(f"Found ROCm {major}.{minor} via rocminfo.")
 
         # Find all unique GFX versions
-        gfx_matches = GFX_NAME_REGEX.findall(output)
+        gfx_matches = GFX_REGEX.findall(output)
         if gfx_matches:
             # Not future-proof
             GFX_CODE=["gfx900", "gfx906", "gfx908", "gfx90a", "gfx942", "gfx1030", "gfx1100", "gfx1101", "gfx1102", "gfx1200", "gfx1201"]
@@ -85,6 +96,8 @@ def _get_rocm_version_from_dir(rocm_path_str: Optional[str]) -> Optional[Tuple[i
         return None
 
     rocm_path = Path(rocm_path_str)
+    # A happy path for checking ROCm version on Linux
+    # Refs.: https://rocmdocs.amd.com/projects/rccl/en/latest/how-to/troubleshooting-rccl.html
     version_file = rocm_path / ".info" / "version"
     if version_file.is_file():
         try:
@@ -99,6 +112,8 @@ def _get_rocm_version_from_dir(rocm_path_str: Optional[str]) -> Optional[Tuple[i
             _log(f"Error reading ROCm version file: {e}")
     return None
 
+# TODO: `apt show rocm-libs -a`
+
 def get_system_info() -> Dict[str, Any]:
     """
     Detects installed ROCm version and GFX architectures using multiple strategies.
@@ -111,6 +126,8 @@ def get_system_info() -> Dict[str, Any]:
     Returns:
         A dictionary with 'rocm_version' and 'gfx_versions'.
     """
+    if _CACHE:
+        return _CACHE
     # Strategy 1: Use `rocminfo` to get everything at once
     info = _get_info_from_rocminfo()
 
@@ -130,5 +147,7 @@ def get_system_info() -> Dict[str, Any]:
 
     if not info:
         _log("Neither ROCm version nor GFX architecture could be detected.")
+    else:
+        _CACHE = info
 
     return info

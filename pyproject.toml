@@ -25,3 +25,7 @@ dynamic = ["version", "description"]
 # This makes it explicitly clear that this is a plugin for the `wheel` tool.
 [project.entry-points."wheel.variant_plugins"]
 amd_variant_provider = "amd_variant_provider:get_variants"
+
+# Register under both group names to be resilient while the WheelNext spec stabilizes.
+[project.entry-points."wheel.variant_providers"]
+amd_variant_provider = "amd_variant_provider:get_variants"
