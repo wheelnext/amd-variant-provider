@@ -18,6 +18,23 @@ from typing import Any, List
 
 from .detect_rocm import get_system_info
 
+def get_variant_priority(rocm_version: Tuple[int, int], gfx_arch: str) -> int:
+    base_priority = rocm_version[0] * 100 + rocm_version[1] * 10
+
+    # Prefer newer architectures
+    # TODO
+    gfx_priorities = {
+        "gfx942": 100,  # MI300 series
+        "gfx90a": 90,   # MI200 series
+        "gfx908": 80,   # MI100 series
+        "gfx1200": 70,  # Latest consumer
+        # ... more mappings
+    }
+    arch_priority = gfx_priorities.get(gfx_arch, 0)
+
+    return base_priority + arch_priority
+
+# TODO: Priority-based variant selection
 def get_variants(context: Any) -> List[str]:
     """
     Entry point for the wheel variant provider.
