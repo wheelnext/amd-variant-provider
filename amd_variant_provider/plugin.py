@@ -1,11 +1,13 @@
 """
-It's supposed to be the equivalent of the "plugin.py" in the NVIDIA variant provider.
+It's supposed to be the equivalent of the "plugin.py" in the NVIDIA variant provider, which detects AMD hardware and driver characteristics and then generates a prioritized list of "features" that a package manager like `pip` can use to select the best posssible wheel.
 
 The "plugin.py" file for the NVIDIA provider is designed as a highly flexible and extensible framework for resolving complex dependencies, while the AMD provider is a straightforward, single-purpose tool.
-`variantlib` is optionally used in the NVIDIA variant provider.
 
-`variantlib` (and its `VariantProperty`) is a tool for managing complex, structured hardware properties, which the sophisticated NVIDIA provider needs, but the straightforward AMD provider does not.
-As mentioned, it's a core library that the package manager (like `pip`) would use to interpret the provider's complex output.
+Notes:
+1. During the evolution of WheelNext variant provider, there were two types of providers - simple, string-based provider vs. complex, config-/class-based provider.
+2. As of 08/27/2025, the latest spec (https://wheelnext.dev/proposals/pepxxx_wheel_variant_support/) only has the complex, config-/class-based provider left.
+3. AMD WheelNext variant provider was initially implemented following the approach to the (deprecated) simple, string-based provider.
+4. As the spec evolved further, it then switched to the approach of the complex, config-/class-based provider.
 
 TODO:
 Flexibility and abstraction similar to NVIDIA's
@@ -13,65 +15,158 @@ Flexibility and abstraction similar to NVIDIA's
 
 from __future__ import annotations
 import logging
+import os
 import sys
-from typing import Any, List
+import re
+from dataclasses import dataclass
+from functools import cached_property
+from typing import Any, List, Protocol, runtime_checkable
 
-from .detect_rocm import get_system_info
+from .detect_rocm import get_system_info, ROCmEnvironment
 
-def get_variant_priority(rocm_version: Tuple[int, int], gfx_arch: str) -> int:
-    base_priority = rocm_version[0] * 100 + rocm_version[1] * 10
+logger = logging.getLogger(__name__)
 
-    # Prefer newer architectures
-    # TODO
-    gfx_priorities = {
-        "gfx942": 100,  # MI300 series
-        "gfx90a": 90,   # MI200 series
-        "gfx908": 80,   # MI100 series
-        "gfx1200": 70,  # Latest consumer
-        # ... more mappings
-    }
-    arch_priority = gfx_priorities.get(gfx_arch, 0)
+# `variantlib` (and its `VariantProperty`) is a tool for managing complex, structured hardware properties.
+# It's a core library that the package manager (like `pip`) would use to interpret the provider's complex output.
+# However, `variantlib` is optionally used. Why it's optional is to avoid a direct dependency on it, which makes the provider self-contained.
+# Such a dependency is risky for a low-level packaging plugin. It could create version conflicts or complicate the bootstrap process where `pip` needs to install and run the provider before other packages.
+# `class VariantPropertyType(Protocol)` is thus defined and acts as a local blueprint or contract, to describe the shape of the data expected.
+@runtime_checkable
+class VariantPropertyType(Protocol):
+    @property
+    def namespace(self) -> str:
+        """Namespace (from plugin)"""
+        raise NotImplementedError
 
-    return base_priority + arch_priority
+    @property
+    def feature(self) -> str:
+        """Feature name (within the namespace)"""
+        raise NotImplementedError
 
-# TODO: Priority-based variant selection
-def get_variants(context: Any) -> List[str]:
+    @property
+    def value(self) -> str:
+        """Feature value"""
+        raise NotImplementedError
+
+# This `dataclass` defines the structure that `pip` expects.
+# It must have a `.name` and a `.values` attribute.
+@dataclass(frozen=True)
+class VariantFeatureConfig:
+    name: str
+    # Acceptable values in priority order for this feature
+    values: list[str]
+
+# Standardized feature keys
+class AMDVariantFeatureKey:
+    # DRIVER = "kmd_version"
+    ROCm = "rocm_version"
+    GFX = "gfx_arch"
+
+class AMDVariantPlugin:
     """
-    Entry point for the wheel variant provider.
-
-    This function is called by the packaging tool to determine which
-    hardware-specific variants are available for the system. It now detects
-    both ROCm version and GFX architecture.
-
-    Args:
-        context: An object containing information about the request. (Currently unused).
-
-    Returns:
-        A list of variant strings, e.g., ['rocm57-gfx90a', 'rocm57'].
+    The AMD ROCm Variant Provider Plugin.
+    This class implements the interface expected by the WheelNext standard.
     """
-    print("AMD ROCm Variant Provider running.", file=sys.stderr)
-    system_info = get_system_info()
-    
-    variants = []
-    rocm_version = system_info.get("rocm_version")
-    gfx_versions = system_info.get("gfx_versions", [])
+    namespace = "amd"
+    # WheelNext static plugin API
+    dynamic = False
 
-    if rocm_version:
-        major, minor = rocm_version
-        base_rocm_tag = f"rocm{major}{minor}"
+    @staticmethod
+    def _parse_list_env(env_val: str | None) -> list[str]:
+        if not envval:
+            return []
+        # Split on comma/space/semicolon, trim, drop empties.
+        parts = re.split(r"[,\s;]+", env_val.strip())
+        return [p for p in (s.strip() for s in parts) if p]
 
-        # If we have GFX info, create specific tags for each arch
-        # e.g., rocm5.7 on a gfx90a GPU -> "rocm57-gfx90a"
-        # A GPU might not report a GFX version (which is possible for non-GPU agents).
-        if gfx_versions:
-            for gfx in gfx_versions:
-                # 
-                variants.append(f"{base_rocm_tag}-{gfx}")
+    @cached_property
+    def _system_info(self) -> dict[str, Any]:
+        """
+        Probe the system once and cache the result.
+        """
+        return get_system_info()
 
-        # Always add the base ROCm version as a fallback variant
-        variants.append(base_rocm_tag)
+    def get_supported_configs(
+        self, known_properties: frozenset[VariantPropertyType] | None
+    ) -> list[VariantFeatureConfig]:
+        """
+        This is the standardized method that `pip` will call.
+        """
+        logger.info(f"[{self.namespace}-variant-provider] Running system detection.")
 
-    if variants:
-        print(f"Identified AMD variants (most specific first): {variants}", file=sys.stderr)
-    
-    return variants
+        configs: list[VariantFeatureConfig] = []
+
+        # TODO: Prioritized list of GFX archs.
+        # E.g., dGPU might be preferred over iGPU; PCIe vs. APU.
+        env_gfx = os.environ.get("AMD_VARIANT_PROVIDER_GFX_ARCH")
+        if not env_gfx:
+            gfx_names = self._system_info.get("gfx_names")
+        else:
+            gfx_names = _parse_list_env(env_gfx);
+
+        # Priority 1: GFX architecture (most specific)
+        if gfx_names:
+            # The list of all detected GFX architectures is provided.
+            # The dependency resolver will try to match them.
+            configs.append(
+                VariantFeatureConfig(name=AMDVariantFeatureKey.GFX, values=gfx_names)
+            )
+        # Priority 2: ROCm version (more general)
+        # Type `str`
+        rocm_version = os.environ.get("AMD_VARIANT_PROVIDER_ROCM_VERSION")
+        if not rocm_version:
+            # Type `tuple[int, int]`
+            rocm_version = self._system_info.get("rocm_version")
+        if rocm_version:
+            if isinstance(rocm_version, tuple):
+                major, minor = rocm_version
+                configs.append(
+                    VariantFeatureConfig(name=AMDVariantFeatureKey.ROCm, values=[f"rocm{major}.{minor}"])
+                )
+            elif isinstance(rocm_version, str):
+                configs.append(
+                    VariantFeatureConfig(name=AMDVariantFeatureKey.ROCm, values=[rocm_version])
+                )
+
+        if configs:
+            logger.info(f"[{self.namespace}-variant-provider] Detected features: {configs}")
+        else:
+            logger.warning(f"[{self.namespace}-variant-provider] No AMD features detected.")
+
+        return configs
+
+    def validate_property(self, variant_property: VariantPropertyType) -> bool:
+        """
+        Validates that a given property is well-formed for the AMD namespace,
+        not its existence on the current system.
+        """
+        assert isinstance(variant_property, VariantPropertyType)
+        assert variant_property.namespace == self.namespace
+
+        feature = variant_property.feature
+        value = variant_property.value
+
+        if feature == AMDVariantFeatureKey.ROCm:
+            # Check if value is like "rocm6.0", "rocm6.1", etc.
+            return bool(re.match(r"^rocm\d+\.\d+$", value))
+        if feature == AMDVariantFeatureKey.GFX:
+            # Check if value is like "gfx90a", "gfx1100", etc.
+            return bool(re.match(r"^gfx\d+[0-9a-f]*$", value))
+
+        logger.warning(
+            f"Unknown variant feature received for validation: "
+            f"`{self.namespace} :: {feature}`.",
+        )
+        return False
+
+def main() -> int:
++    """Minimal CLI to print detected configs for debugging)."""
++    logging.basicConfig(level=os.environ.get("AMD_VARIANT_PROVIDER_LOGLEVEL", "INFO"))
++    plugin = AMDVariantPlugin()
++    cfgs = plugin.get_supported_configs(None)
++    for c in cfgs:
++        print(f"{plugin.namespace} :: {c.name} :: {', '.join(c.values)}")
++    return 0
++
++if __name__ == "__main__":
++    sys.exit(main())
