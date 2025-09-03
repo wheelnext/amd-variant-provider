@@ -1,22 +1,38 @@
+# Defines the build system (e.g., Flit, Setuptools) that will package the code.
+# This section is mandatory in a "pyproject.toml" file
 [build-system]
+# Indicates the build tool and its corresponding versions that must be installed first.
 requires = ["flit_core >=3.11,<4"]
+# Tells the packaging tool (e.g., `pip`, `uv`) which Python object (`buildapi`) to call to start the build.
 build-backend = "flit_core.buildapi"
 
+# Contains all the project metadata, dependencies, and the entry point.
 [project]
+# The official name of the package to be built
 name = "amd-variant-provider"
-authors = [{ name = "Jithun Nair", email = "jithun.nair@amd.com" }]
+authors = [{ name = "WheelNext Community" }]
 maintainers = [
     { name = "Jithun Nair", email = "jithun.nair@amd.com" },
     { name = "Jeff Daily", email = "jeff.daily@amd.com" },
+    { name = "Glen Cao", email = "glen.cao@amd.com" },
 ]
-license = "MIT"
+license = { text = "MIT" }  # Modern way to specify a standard license
 license-files = ["LICENSE"]
 readme = "README.md"
 requires-python = ">=3.9"
+urls = { Home = "https://github.com/wheelnext/amd-variant-provider/" }
+# No runtime dependencies, meaning self-contained
+dependencies = []
+# The version and description can be hard-coded and stored here (not the current case),
+# or dynamically found at build time from "__init__.py" file (the case).
 dynamic = ["version", "description"]
 
-[project.urls]
-Home = "https://github.com/wheelnext/amd-variant-provider/"
-
+# This section is how the provider registers itself with the Python packaging ecosystem,
+# which makes it explicitly clear that this is a plugin (named "amd_variant_provider") for the `wheel` tool to be activated.
+# Meanwhile, wheels must be installable without entry points.
 [project.entry-points.variant_plugins]
 amd_variant_provider = "amd_variant_provider.plugin:AMDVariantPlugin"
+
+# Optional: expose a tiny CLI (amd_variant_print) for debugging.
+[project.scripts]
+amd_variant_print = "amd_variant_provider.plugin:main"
