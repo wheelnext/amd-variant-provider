@@ -73,7 +73,7 @@ class AMDVariantPlugin:
 
     @staticmethod
     def _parse_list_env(env_val: str | None) -> list[str]:
-        if not envval:
+        if not env_val:
             return []
         # Split on comma/space/semicolon, trim, drop empties.
         parts = re.split(r"[,\s;]+", env_val.strip())
