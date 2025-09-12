@@ -89,7 +89,7 @@ _GFX_REGEX = re.compile(r"(gfx[0-9a-fA-F]+(?:-[0-9a-fA-F]+)?(?:-generic)?(?:[:][
 
 def _get_gfx_from_agent_enumerator() -> list[str]:
     exec_path = shutil.which("rocm_agent_enumerator")
-    if not exe:
+    if not exec_path:
         return []
     try:
         # The `-name` option prints just the architecture names; it's designed for scripts.
@@ -104,7 +104,6 @@ def _get_gfx_from_agent_enumerator() -> list[str]:
         )
         vals = []
         for line in proc.stdout.splitlines():
-            tok = _normalize_gfx(line)
             m = _GFX_REGEX.search(line)
             tok = None if not m else m.group(1).lower()
             # "gfx000" represents CPU. Keep GPUs only.
@@ -235,6 +234,7 @@ def get_system_info() -> Dict[str, Any]:
         if version:
             info["rocm_version"] = version
     if "gfx_names" not in info:
+        # FIXME: This approach to querying GFX is technically more preferred.
         from_agent = _get_gfx_from_agent_enumerator()
         if from_agent:
             info["gfx_names"] = from_agent
