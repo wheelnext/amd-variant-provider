@@ -53,7 +53,7 @@ class KMDVersion:
 class AMDVariantFeatureKey():
     ROCM_VERSION = "rocm_version"
     KMD_VERSION = "kmd_version"
-    GFX_ARCHS = "gfx_archs"
+    GFX_ARCH = "gfx_arch"
 
 # Draft that is expected to be the equivalent of `class CudaEnvironment`.
 # Unused yet.
@@ -153,7 +153,7 @@ def _get_info_from_rocminfo() -> Dict[str, Any]:
         A dictionary containing:
         * AMDVariantFeatureKey.ROCM_VERSION (e.g. ROCmVersion(5, 7, 0))
         * AMDVariantFeatureKey.KMD_VERSION (e.g. KMDVersion(6, 10, 5))
-        * AMDVariantFeatureKey.GFX_ARCHS (e.g., ["gfx90a", "gfx1030"]).
+        * AMDVariantFeatureKey.GFX_ARCH (e.g., ["gfx90a", "gfx1030"]).
     """
     if platform.system() != "Linux":
         logger.info("ROCm detection skipped: not running on Linux")
@@ -196,7 +196,7 @@ def _get_info_from_rocminfo() -> Dict[str, Any]:
             # TODO: Does this need to be of a specific type
             unique_gfx = sorted(set(gfx_matches))
             if all(x in GFX_CODE for x in unique_gfx):
-                info[AMDVariantFeatureKey.GFX_ARCHS] = unique_gfx
+                info[AMDVariantFeatureKey.GFX_ARCH] = unique_gfx
                 logging.info(f"Found GFX architectures: {unique_gfx} via `rocminfo`.")
 
     except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired, Exception) as e:
@@ -253,7 +253,7 @@ def get_system_info() -> Dict[str, Any]:
     3. Check the default installation path "/opt/rocm" for a version file.
 
     Returns:
-        A dictionary with AMDVariantFeatureKey.ROCM_VERSION and AMDVariantFeatureKey.GFX_ARCHS.
+        A dictionary with AMDVariantFeatureKey.ROCM_VERSION and AMDVariantFeatureKey.GFX_ARCH.
     """
     # Strategy 1: Use `rocminfo` to get everything at once
     info = _get_info_from_rocminfo()
@@ -265,11 +265,11 @@ def get_system_info() -> Dict[str, Any]:
         version = _get_rocm_version_from_dir(rocm_path_env)
         if version:
             info[AMDVariantFeatureKey.ROCM_VERSION] = version
-    if AMDVariantFeatureKey.GFX_ARCHS not in info:
+    if AMDVariantFeatureKey.GFX_ARCH not in info:
         # FIXME: This approach to querying GFX is technically more preferred.
         from_agent = _get_gfx_from_agent_enumerator()
         if from_agent:
-            info[AMDVariantFeatureKey.GFX_ARCHS] = from_agent
+            info[AMDVariantFeatureKey.GFX_ARCH] = from_agent
 
     if AMDVariantFeatureKey.KMD_VERSION not in info:
         # This "kmd_version" may be not needed for the current simple, straightforward AMD WheelNext variant provider.

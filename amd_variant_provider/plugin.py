@@ -94,7 +94,7 @@ class AMDVariantPlugin:
         # E.g., dGPU might be preferred over iGPU; PCIe vs. APU.
         env_gfx = os.environ.get("AMD_VARIANT_PROVIDER_GFX_ARCH")
         if not env_gfx:
-            gfx_archs = self._system_info.get(AMDVariantFeatureKey.GFX_ARCHS)
+            gfx_archs = self._system_info.get(AMDVariantFeatureKey.GFX_ARCH)
         else:
             gfx_archs = self._parse_list_env(env_gfx);
 
@@ -102,9 +102,10 @@ class AMDVariantPlugin:
         if gfx_archs:
             # The list of all detected GFX architectures is provided.
             # The dependency resolver will try to match them.
-            configs.append(
-                VariantFeatureConfig(name=AMDVariantFeatureKey.GFX_ARCHS, values=gfx_archs)
-            )
+            for gfx_arch in gfx_archs:
+                configs.append(
+                    VariantFeatureConfig(name=AMDVariantFeatureKey.GFX_ARCH, values=gfx_arch)
+                )
         # Priority 2: ROCm version (more general)
         # Type `str`
         rocm_version = os.environ.get("AMD_VARIANT_PROVIDER_ROCM_VERSION")
@@ -154,7 +155,7 @@ def main() -> int:
     def print_supported_configs() -> None:
       cfgs = plugin.get_supported_configs(None)
       for c in cfgs:
-          print(f"{plugin.namespace} :: {c.name} :: {', '.join(c.values)}")
+          print(f"{plugin.namespace} :: {c.name} :: {c.values}")
 
     print_supported_configs()
 
