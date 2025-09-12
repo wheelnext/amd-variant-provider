@@ -28,19 +28,42 @@ from pathlib import Path
 from typing import Optional, Tuple, List, Dict, Any
 from dataclasses import dataclass
 from functools import lru_cache
+#from enum import StrEnum
 
 logger = logging.getLogger(__name__)
+
+# Currently only have major/minor/patch versions, but might want to add more version identifiers in the future
+@dataclass(frozen=True)
+class ROCmVersion:
+    major: int = 0
+    minor: int = 0
+    patch: int = 0
+
+    def __str__(self):
+      return f"{self.major}.{self.minor}.{self.patch}"
+
+@dataclass(frozen=True)
+class KMDVersion:
+    major: int = 0
+    minor: int = 0
+    patch: int = 0
+
+# StrEnum not supported for py<=3.10
+#class AMDVariantFeatureKey(StrEnum):
+class AMDVariantFeatureKey():
+    ROCM_VERSION = "rocm_version"
+    KMD_VERSION = "kmd_version"
+    GFX_ARCHS = "gfx_archs"
 
 # Draft that is expected to be the equivalent of `class CudaEnvironment`.
 # Unused yet.
 @dataclass(frozen=True)
 class ROCmEnvironment:
     kernel_module_version: Optional[str]  # `modinfo amdgpu | grep -Ei '^version:'
-    #rocm_version: Optional[str]  # `rocminfo`
-    rocm_version: Optional[tuple[int, int]]  # `rocminfo`
+    rocm_version: Optional[ROCmVersion]  # `rocminfo`
     gfx_archs: List[str]  # `rocminfo` or `rocm_agent_enumerator -name`
 
-def _get_amdgpu_kmd_version() -> Optional[str]:
+def _get_amdgpu_kmd_version() -> Optional[KMDVersion]:
     """
     Detects the version of the installed AMDGPU KMD.
 
@@ -58,7 +81,7 @@ def _get_amdgpu_kmd_version() -> Optional[str]:
             kmd_version = version_path.read_text(encoding="utf-8").strip()
             # Basic validation to ensure the file isn't empty
             if kmd_version:
-                return kmd_version
+                return KMDVersion(*map(int, kmd_version.split(".")))
     except (IOError, OSError):
         # This can happen if there are permission issues or the file doesn't exist.
         pass  # Silently fall through to the next strategy.
@@ -72,9 +95,9 @@ def _get_amdgpu_kmd_version() -> Optional[str]:
             check=True,
             timeout=10,
         )
-        match = re.search(r"^version:\s*(.*)", result.stdout, re.MULTILINE)
+        match = re.search(r"^version:\s*(\d+)\.(\d+).(\d+))", result.stdout, re.MULTILINE)
         if match:
-            return match.group(1).strip()
+            return KMDVersion(*map(int, match.groups()))
     except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         # This can happen if `modinfo` isn't in the PATH or the module doesn't exist.
         return None
@@ -83,9 +106,10 @@ def _get_amdgpu_kmd_version() -> Optional[str]:
 
 # Regex for ROCm version (like "5.7" or "6.4.3", only major/minor)
 _ROCM_VERSION_REGEX = re.compile(r"ROCm(?:\s+Version)?[:\s]*(\d+)\.(\d+)(?:\.\d+)?", re.IGNORECASE)
+_KMD_VERSION_REGEX_IN_ROCMINFO = re.compile(r"ROCk module version (\d+)\.(\d+)\.(\d+)")
+_GFX_REGEX = re.compile(r"\b(gfx\d+[0-9a-f]*)\b")
 # RegEx for GFX inspired by https://github.com/ROCm/rocminfo/blob/c34ac33d661bd2c87d9c3b956eb8b15ac8f7092c/rocm_agent_enumerator#L95
-#_GFX_REGEX = re.compile(r"^\s*Name:\s+(gfx\d+[0-9a-f]*)", re.MULTILINE)
-_GFX_REGEX = re.compile(r"(gfx[0-9a-fA-F]+(?:-[0-9a-fA-F]+)?(?:-generic)?(?:[:][-+:\w]+)?)")
+#_GFX_REGEX = re.compile(r"(gfx[0-9a-fA-F]+(?:-[0-9a-fA-F]+)?(?:-generic)?(?:[:][-+:\w]+)?)")
 
 def _get_gfx_from_agent_enumerator() -> list[str]:
     exec_path = shutil.which("rocm_agent_enumerator")
@@ -105,6 +129,7 @@ def _get_gfx_from_agent_enumerator() -> list[str]:
         vals = []
         for line in proc.stdout.splitlines():
             m = _GFX_REGEX.search(line)
+            print(m)
             tok = None if not m else m.group(1).lower()
             # "gfx000" represents CPU. Keep GPUs only.
             if tok and tok != "gfx000":
@@ -115,7 +140,7 @@ def _get_gfx_from_agent_enumerator() -> list[str]:
 
 def _get_info_from_rocminfo() -> Dict[str, Any]:
     """
-    Runs `rocminfo` once and parses it for both ROCm version (UMD) and GFX versions.
+    Runs `rocminfo` once and parses it for ROCm version (UMD), KMD version and GFX versions.
     Other commands (e.g., `rocm-smi`) or lib APIs can be alternatives for detection.
     Possible more detection strategies:
     - Package manager queries (dpkg, rpm, pacman)
@@ -125,8 +150,10 @@ def _get_info_from_rocminfo() -> Dict[str, Any]:
     - ROCm SMI tool usage
 
     Returns:
-        A dictionary containing "rocm_version" (e.g., (5, 7)) and 
-        "gfx_names" (e.g., ["gfx90a", "gfx1030"]).
+        A dictionary containing:
+        * AMDVariantFeatureKey.ROCM_VERSION (e.g. ROCmVersion(5, 7, 0))
+        * AMDVariantFeatureKey.KMD_VERSION (e.g. KMDVersion(6, 10, 5))
+        * AMDVariantFeatureKey.GFX_ARCHS (e.g., ["gfx90a", "gfx1030"]).
     """
     if platform.system() != "Linux":
         logger.info("ROCm detection skipped: not running on Linux")
@@ -147,12 +174,11 @@ def _get_info_from_rocminfo() -> Dict[str, Any]:
             timeout=7,  # No need for large timeouts because of confirmed existence
         )
 
-        # Find ROCm version
-        version_match = _ROCM_VERSION_REGEX.search(output)
-        if version_match:
-            major, minor = map(int, version_match.groups())
-            info["rocm_version"] = (major, minor)
-            logging.info(f"Found rocm{major}.{minor} via `rocminfo`.")
+        # Find KMD version
+        kmd_version_match = _KMD_VERSION_REGEX_IN_ROCMINFO.search(output)
+        if kmd_version_match:
+            major, minor, patch = map(int, kmd_version_match.groups())
+            info[AMDVariantFeatureKey.KMD_VERSION] = KMDVersion(major, minor, patch)
 
         # Find all unique GFX versions.
         # FIXME:
@@ -164,13 +190,13 @@ def _get_info_from_rocminfo() -> Dict[str, Any]:
             # MI and Navi
             # https://github.com/pytorch/pytorch/blob/4d5f92aa39d294a833038299aa3f38f99ebc31b6/.ci/docker/manywheel/build.sh#L86
             # Also refer to https://d2awnip2yjpvqn.cloudfront.net/v2 (internal only?)
-            GFX_CODE = os.environ.get("AMD_PREFERRED_GFX_ARCHS", "").split(',') or
-                ["gfx900", "gfx906", "gfx908", "gfx90a", "gfx942", "gfx1030", "gfx1100", "gfx1101", "gfx1102", "gfx1200", "gfx1201"]
+            GFX_CODE = [g.strip() for g in os.environ.get("AMD_PREFERRED_GFX_ARCHS", "").split(',') if g.strip()] or ["gfx900", "gfx906", "gfx908", "gfx90a", "gfx942", "gfx1030", "gfx1100", "gfx1101", "gfx1102", "gfx1200", "gfx1201"]
             # Use a set to store unique GFX versions, then sort for deterministic output.
             # TODO: prioritized list may be needed.
+            # TODO: Does this need to be of a specific type
             unique_gfx = sorted(set(gfx_matches))
             if all(x in GFX_CODE for x in unique_gfx):
-                info["gfx_names"] = unique_gfx
+                info[AMDVariantFeatureKey.GFX_ARCHS] = unique_gfx
                 logging.info(f"Found GFX architectures: {unique_gfx} via `rocminfo`.")
 
     except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired, Exception) as e:
@@ -178,7 +204,7 @@ def _get_info_from_rocminfo() -> Dict[str, Any]:
 
     return info
 
-def _get_rocm_version_from_dir(rocm_path_str: Optional[str]) -> Optional[Tuple[int, int]]:
+def _get_rocm_version_from_dir(rocm_path_str: Optional[str] = None) -> Optional[ROCmVersion]:
     """
     (Fallback) Attempts to infer the ROCm version from the version file in a given directory.
     """
@@ -192,6 +218,7 @@ def _get_rocm_version_from_dir(rocm_path_str: Optional[str]) -> Optional[Tuple[i
     if not rocm_path:
         rocm_path = Path("/opt/rocm")
 
+    # TODO: Remove since hip/rocm_version.h is more robust for both Linux/Windows
     # A happy path for checking ROCm version on Linux
     # Refs.: https://rocmdocs.amd.com/projects/rccl/en/latest/how-to/troubleshooting-rccl.html
     version_file = rocm_path / ".info" / "version"
@@ -199,16 +226,21 @@ def _get_rocm_version_from_dir(rocm_path_str: Optional[str]) -> Optional[Tuple[i
         try:
             content = version_file.read_text(encoding="utf-8").strip()
             # The version file typically just contains "x.y.z"
-            parts = content.split('.')
-            if len(parts) >= 2:
+            parts = re.split(r"[.-]", content)
+            if len(parts) >= 3:
+                major, minor, patch = int(parts[0]), int(parts[1]), int(parts[2]) 
+                logging.info(f"Found rocm{major}.{minor}.{patch} via version file: {version_file}")
+                return ROCmVersion(major, minor, patch)
+            elif len(parts) >= 2:
                 major, minor = int(parts[0]), int(parts[1])
                 logging.info(f"Found rocm{major}.{minor} via version file: {version_file}")
-                return major, minor
+                return ROCmVersion(major, minor)
         except (ValueError, IOError) as e:
             logging.error(f"Error reading ROCm version file: {e}")
     return None
 
-# TODO (optional): `apt show rocm-libs -a` as a distro-specific fallback.
+    # TODO (REQUIRED FOR WINDOWS): use `rocm_version.h` and then `hip_version.h`
+    # TODO (optional): `apt show rocm-libs -a` as a distro-specific fallback.
 
 @lru_cache(maxsize=1)
 def get_system_info() -> Dict[str, Any]:
@@ -221,28 +253,35 @@ def get_system_info() -> Dict[str, Any]:
     3. Check the default installation path "/opt/rocm" for a version file.
 
     Returns:
-        A dictionary with "rocm_version" and "gfx_names".
+        A dictionary with AMDVariantFeatureKey.ROCM_VERSION and AMDVariantFeatureKey.GFX_ARCHS.
     """
     # Strategy 1: Use `rocminfo` to get everything at once
     info = _get_info_from_rocminfo()
 
     # Fallback for ROCm version if `rocminfo` failed or didn't find it
-    if "rocm_version" not in info:
+    if AMDVariantFeatureKey.ROCM_VERSION not in info:
         # Strategy 2: Check `ROCM_PATH` environment variable
         rocm_path_env = os.environ.get("ROCM_PATH")
         version = _get_rocm_version_from_dir(rocm_path_env)
         if version:
-            info["rocm_version"] = version
-    if "gfx_names" not in info:
+            info[AMDVariantFeatureKey.ROCM_VERSION] = version
+    if AMDVariantFeatureKey.GFX_ARCHS not in info:
         # FIXME: This approach to querying GFX is technically more preferred.
         from_agent = _get_gfx_from_agent_enumerator()
         if from_agent:
-            info["gfx_names"] = from_agent
+            info[AMDVariantFeatureKey.GFX_ARCHS] = from_agent
+
+    if AMDVariantFeatureKey.KMD_VERSION not in info:
+        # This "kmd_version" may be not needed for the current simple, straightforward AMD WheelNext variant provider.
+        info[AMDVariantFeatureKey.KMD_VERSION] = _get_amdgpu_kmd_version()
 
     if not info:
-        logging.warning("Neither ROCm version nor GFX architecture could be detected.")
-    else:
-        # This "kmd_version" may be not needed for the current simple, straightforward AMD WheelNext variant provider.
-        info["kmd_version"] = _get_amdgpu_kmd_version()
+        logging.warning("None of ROCm version / KFD version / GFX architecture could be detected.")
 
     return info
+
+if __name__ == "__main__":
+    print(f"{_get_info_from_rocminfo()=}")
+    print(f"{_get_rocm_version_from_dir()=}")
+    print(f"{_get_amdgpu_kmd_version()=}")
+    print(f"{get_system_info()=}")
