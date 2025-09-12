@@ -1,5 +1,5 @@
 """
-It's supposed to be the equivalent of the "plugin.py" in the NVIDIA variant provider, which detects AMD hardware and driver characteristics and then generates a prioritized list of "features" that a package manager like `pip` can use to select the best posssible wheel.
+It's supposed to be the equivalent of the "plugin.py" in the NVIDIA variant provider, which detects AMD hardware and driver characteristics and then generates a prioritized list of "features" that a package manager like `pip` can use to select the best possible wheel.
 
 The "plugin.py" file for the NVIDIA provider is designed as a highly flexible and extensible framework for resolving complex dependencies, while the AMD provider is a straightforward, single-purpose tool.
 
@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import Any, List, Protocol, runtime_checkable
 
-from .detect_rocm import get_system_info, ROCmEnvironment
+from detect_rocm import get_system_info, ROCmEnvironment, AMDVariantFeatureKey
 
 logger = logging.getLogger(__name__)
 
@@ -55,12 +55,6 @@ class VariantFeatureConfig:
     name: str
     # Acceptable values in priority order for this feature
     values: list[str]
-
-# Standardized feature keys
-class AMDVariantFeatureKey:
-    # DRIVER = "kmd_version"
-    ROCm = "rocm_version"
-    GFX = "gfx_arch"
 
 class AMDVariantPlugin:
     """
@@ -100,33 +94,27 @@ class AMDVariantPlugin:
         # E.g., dGPU might be preferred over iGPU; PCIe vs. APU.
         env_gfx = os.environ.get("AMD_VARIANT_PROVIDER_GFX_ARCH")
         if not env_gfx:
-            gfx_names = self._system_info.get("gfx_names")
+            gfx_archs = self._system_info.get(AMDVariantFeatureKey.GFX_ARCHS)
         else:
-            gfx_names = _parse_list_env(env_gfx);
+            gfx_archs = self._parse_list_env(env_gfx);
 
         # Priority 1: GFX architecture (most specific)
-        if gfx_names:
+        if gfx_archs:
             # The list of all detected GFX architectures is provided.
             # The dependency resolver will try to match them.
             configs.append(
-                VariantFeatureConfig(name=AMDVariantFeatureKey.GFX, values=gfx_names)
+                VariantFeatureConfig(name=AMDVariantFeatureKey.GFX_ARCHS, values=gfx_archs)
             )
         # Priority 2: ROCm version (more general)
         # Type `str`
         rocm_version = os.environ.get("AMD_VARIANT_PROVIDER_ROCM_VERSION")
         if not rocm_version:
-            # Type `tuple[int, int]`
-            rocm_version = self._system_info.get("rocm_version")
+            # Type `ROCmVersion` defined in detect_rocm.py
+            rocm_version = self._system_info.get(AMDVariantFeatureKey.ROCM_VERSION)
         if rocm_version:
-            if isinstance(rocm_version, tuple):
-                major, minor = rocm_version
-                configs.append(
-                    VariantFeatureConfig(name=AMDVariantFeatureKey.ROCm, values=[f"rocm{major}.{minor}"])
-                )
-            elif isinstance(rocm_version, str):
-                configs.append(
-                    VariantFeatureConfig(name=AMDVariantFeatureKey.ROCm, values=[rocm_version])
-                )
+            configs.append(
+                VariantFeatureConfig(name=AMDVariantFeatureKey.ROCM_VERSION, values=[str(rocm_version)])
+            )
 
         if configs:
             logger.info(f"[{self.namespace}-variant-provider] Detected features: {configs}")
@@ -148,7 +136,7 @@ class AMDVariantPlugin:
 
         if feature == AMDVariantFeatureKey.ROCm:
             # Check if value is like "rocm6.0", "rocm6.1", etc.
-            return bool(re.match(r"^rocm\d+\.\d+$", value))
+            return bool(re.match(r"^\d+\.\d+$", value))
         if feature == AMDVariantFeatureKey.GFX:
             # Check if value is like "gfx90a", "gfx1100", etc.
             return bool(re.match(r"^gfx\d+[0-9a-f]*$", value))
@@ -160,13 +148,23 @@ class AMDVariantPlugin:
         return False
 
 def main() -> int:
-+    """Minimal CLI to print detected configs for debugging)."""
-+    logging.basicConfig(level=os.environ.get("AMD_VARIANT_PROVIDER_LOGLEVEL", "INFO"))
-+    plugin = AMDVariantPlugin()
-+    cfgs = plugin.get_supported_configs(None)
-+    for c in cfgs:
-+        print(f"{plugin.namespace} :: {c.name} :: {', '.join(c.values)}")
-+    return 0
-+
-+if __name__ == "__main__":
-+    sys.exit(main())
+    """Minimal CLI to print detected configs for debugging)."""
+    logging.basicConfig(level=os.environ.get("AMD_VARIANT_PROVIDER_LOGLEVEL", "INFO"))
+    plugin = AMDVariantPlugin()
+    def print_supported_configs() -> None:
+      cfgs = plugin.get_supported_configs(None)
+      for c in cfgs:
+          print(f"{plugin.namespace} :: {c.name} :: {', '.join(c.values)}")
+
+    print_supported_configs()
+
+    os.environ["AMD_VARIANT_PROVIDER_GFX_ARCH"] = "gfx1100"
+    print_supported_configs()
+
+    os.environ["AMD_VARIANT_PROVIDER_ROCM_VERSION"] = "7.0.0"
+    print_supported_configs()
+
+    return 0
+
+if __name__ == "__main__":
+    sys.exit(main())
