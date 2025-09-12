@@ -186,10 +186,6 @@ def _get_info_from_rocminfo() -> Dict[str, Any]:
 
     info = {}
 
-    rocm_ver = _get_rocm_version_from_smi()
-    if rocm_ver:
-        info[AMDVariantFeatureKey.ROCM_VERSION] = rocm_ver
-
     exec_path = shutil.which("rocminfo")
     if not exec_path:
         return info
@@ -282,18 +278,23 @@ def get_system_info() -> Dict[str, Any]:
     3. Check the default installation path "/opt/rocm" for a version file.
 
     Returns:
-        A dictionary with AMDVariantFeatureKey.ROCM_VERSION and AMDVariantFeatureKey.GFX_ARCH.
+        A dictionary with AMDVariantFeatureKey.KMDVersion, AMDVariantFeatureKey.ROCM_VERSION and AMDVariantFeatureKey.GFX_ARCH.
     """
     # Strategy 1: Use `rocminfo` to get everything at once
     info = _get_info_from_rocminfo()
 
-    # Fallback for ROCm version if `rocminfo` failed or didn't find it
+    # Fallbacks for ROCm version if `rocminfo` failed or didn't find it
     if AMDVariantFeatureKey.ROCM_VERSION not in info:
-        # Strategy 2: Check `ROCM_PATH` environment variable
-        rocm_path_env = os.environ.get("ROCM_PATH")
-        version = _get_rocm_version_from_dir(rocm_path_env)
+        # Strategy 2: Use `rocm-smi --showversion` to get ROCm version
+        version = _get_rocm_version_from_smi()
         if version:
             info[AMDVariantFeatureKey.ROCM_VERSION] = version
+        else:
+            # Strategy 3: Check `ROCM_PATH` environment variable
+            rocm_path_env = os.environ.get("ROCM_PATH")
+            version = _get_rocm_version_from_dir(rocm_path_env)
+            if version:
+                info[AMDVariantFeatureKey.ROCM_VERSION] = version
     if AMDVariantFeatureKey.GFX_ARCH not in info:
         # FIXME: This approach to querying GFX is technically more preferred.
         from_agent = _get_gfx_from_agent_enumerator()
@@ -310,6 +311,7 @@ def get_system_info() -> Dict[str, Any]:
     return info
 
 if __name__ == "__main__":
+    print(f"{_get_rocm_version_from_smi()=}")
     print(f"{_get_info_from_rocminfo()=}")
     print(f"{_get_rocm_version_from_dir()=}")
     print(f"{_get_amdgpu_kmd_version()=}")
