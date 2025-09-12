@@ -129,7 +129,7 @@ def _get_gfx_from_agent_enumerator() -> list[str]:
         vals = []
         for line in proc.stdout.splitlines():
             m = _GFX_REGEX.search(line)
-            print(m)
+            #print(m)
             tok = None if not m else m.group(1).lower()
             # "gfx000" represents CPU. Keep GPUs only.
             if tok and tok != "gfx000":
@@ -283,5 +283,6 @@ def get_system_info() -> Dict[str, Any]:
 if __name__ == "__main__":
     print(f"{_get_info_from_rocminfo()=}")
     print(f"{_get_rocm_version_from_dir()=}")
+    print(f"{_get_gfx_from_agent_enumerator()=}")
     print(f"{_get_amdgpu_kmd_version()=}")
     print(f"{get_system_info()=}")

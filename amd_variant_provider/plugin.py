@@ -92,7 +92,7 @@ class AMDVariantPlugin:
 
         # TODO: Prioritized list of GFX archs.
         # E.g., dGPU might be preferred over iGPU; PCIe vs. APU.
-        env_gfx = os.environ.get("AMD_VARIANT_PROVIDER_GFX_ARCH")
+        env_gfx = os.environ.get("AMD_VARIANT_PROVIDER_FORCE_GFX_ARCH")
         if not env_gfx:
             gfx_archs = self._system_info.get(AMDVariantFeatureKey.GFX_ARCH)
         else:
@@ -108,7 +108,7 @@ class AMDVariantPlugin:
                 )
         # Priority 2: ROCm version (more general)
         # Type `str`
-        rocm_version = os.environ.get("AMD_VARIANT_PROVIDER_ROCM_VERSION")
+        rocm_version = os.environ.get("AMD_VARIANT_PROVIDER_FORCE_ROCM_VERSION")
         if not rocm_version:
             # Type `ROCmVersion` defined in detect_rocm.py
             rocm_version = self._system_info.get(AMDVariantFeatureKey.ROCM_VERSION)
@@ -159,10 +159,10 @@ def main() -> int:
 
     print_supported_configs()
 
-    os.environ["AMD_VARIANT_PROVIDER_GFX_ARCH"] = "gfx1100"
+    os.environ["AMD_VARIANT_PROVIDER_FORCE_GFX_ARCH"] = "gfx1100"
     print_supported_configs()
 
-    os.environ["AMD_VARIANT_PROVIDER_ROCM_VERSION"] = "7.0.0"
+    os.environ["AMD_VARIANT_PROVIDER_FORCE_ROCM_VERSION"] = "7.0.0"
     print_supported_configs()
 
     return 0
