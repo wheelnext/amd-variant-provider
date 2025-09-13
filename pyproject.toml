@@ -17,7 +17,6 @@ maintainers = [
     { name = "Glen Cao", email = "glen.cao@amd.com" },
 ]
 license = { text = "MIT" }  # Modern way to specify a standard license
-license-files = ["LICENSE"]
 readme = "README.md"
 requires-python = ">=3.9"
 urls = { Home = "https://github.com/wheelnext/amd-variant-provider/" }
