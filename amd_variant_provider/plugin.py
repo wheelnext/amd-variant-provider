@@ -137,7 +137,8 @@ class AMDVariantPlugin:
 
         if feature == AMDVariantFeatureKey.ROCm:
             # Check if value is like "rocm6.0", "rocm6.1", etc.
-            return bool(re.match(r"^\d+\.\d+$", value))
+            # Components consist of the major, the minor, and the optional patch.
+            return bool(re.match(r"^\d+\.\d+(?:\.\d+)?$", value))
         if feature == AMDVariantFeatureKey.GFX:
             # Check if value is like "gfx90a", "gfx1100", etc.
             return bool(re.match(r"^gfx\d+[0-9a-f]*$", value))

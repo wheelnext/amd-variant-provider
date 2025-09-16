@@ -60,7 +60,7 @@ class AMDVariantFeatureKey():
 @dataclass(frozen=True)
 class ROCmEnvironment:
     kernel_module_version: Optional[str]  # `modinfo amdgpu | grep -Ei '^version:'
-    rocm_version: Optional[ROCmVersion]  # `rocminfo`
+    rocm_version: Optional[ROCmVersion]  # `rocminfo` (deprecated for reliable ROCm version info) or `rocm-smi --showversion`
     gfx_archs: List[str]  # `rocminfo` or `rocm_agent_enumerator -name`
 
 def _get_amdgpu_kmd_version() -> Optional[KMDVersion]:
@@ -104,8 +104,9 @@ def _get_amdgpu_kmd_version() -> Optional[KMDVersion]:
 
     return None
 
-# Regex for ROCm version (like "5.7" or "6.4.3", only major/minor)
-_ROCM_VERSION_REGEX = re.compile(r"ROCm(?:\s+Version)?[:\s]*(\d+)\.(\d+)(?:\.\d+)?", re.IGNORECASE)
+# Regex for ROCm version (like "5.7" or "6.4.3", only major/minor/patch, patch may be optional)
+
+_ROCM_VERSION_REGEX = re.compile(r"ROCm SMI version:\s*(\d+)\.(\d+)(?:\.(\d+))?", re.IGNORECASE)
 _KMD_VERSION_REGEX_IN_ROCMINFO = re.compile(r"ROCk module version (\d+)\.(\d+)\.(\d+)")
 _GFX_REGEX = re.compile(r"\b(gfx\d+[0-9a-f]*)\b")
 # RegEx for GFX inspired by https://github.com/ROCm/rocminfo/blob/c34ac33d661bd2c87d9c3b956eb8b15ac8f7092c/rocm_agent_enumerator#L95
@@ -138,9 +139,33 @@ def _get_gfx_from_agent_enumerator() -> list[str]:
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
         return []
 
+def _get_rocm_version_from_smi() -> Optional[ROCmVersion]:
+    """
+    Gets the ROCm version (UMD) by running the `rocm-smi --showversion` command.
+    This is more reliable for getting the ROCm version info.
+    """
+    if platform.system() != "Linux":
+        return None
+
+    exec_path = shutil.which("rocm-smi")
+    if not exec_path:
+        return None
+
+    try:
+        result = subprocess.run(
+            [exec_path, "--showversion"],
+            capture_output=True, text=True, check=True, timeout=7
+        )
+        match = _ROCM_VERSION_REGEX.search(result.stdout)
+        if match:
+            return ROCmVersion(*map(int, match.groups()))
+    except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
+        return None
+    return None
+
 def _get_info_from_rocminfo() -> Dict[str, Any]:
     """
-    Runs `rocminfo` once and parses it for ROCm version (UMD), KMD version and GFX versions.
+    Runs `rocminfo` once and parses it for KMD version and GFX versions.
     Other commands (e.g., `rocm-smi`) or lib APIs can be alternatives for detection.
     Possible more detection strategies:
     - Package manager queries (dpkg, rpm, pacman)
@@ -253,18 +278,23 @@ def get_system_info() -> Dict[str, Any]:
     3. Check the default installation path "/opt/rocm" for a version file.
 
     Returns:
-        A dictionary with AMDVariantFeatureKey.ROCM_VERSION and AMDVariantFeatureKey.GFX_ARCH.
+        A dictionary with AMDVariantFeatureKey.KMDVersion, AMDVariantFeatureKey.ROCM_VERSION and AMDVariantFeatureKey.GFX_ARCH.
     """
     # Strategy 1: Use `rocminfo` to get everything at once
     info = _get_info_from_rocminfo()
 
-    # Fallback for ROCm version if `rocminfo` failed or didn't find it
+    # Fallbacks for ROCm version if `rocminfo` failed or didn't find it
     if AMDVariantFeatureKey.ROCM_VERSION not in info:
-        # Strategy 2: Check `ROCM_PATH` environment variable
-        rocm_path_env = os.environ.get("ROCM_PATH")
-        version = _get_rocm_version_from_dir(rocm_path_env)
+        # Strategy 2: Use `rocm-smi --showversion` to get ROCm version
+        version = _get_rocm_version_from_smi()
         if version:
             info[AMDVariantFeatureKey.ROCM_VERSION] = version
+        else:
+            # Strategy 3: Check `ROCM_PATH` environment variable
+            rocm_path_env = os.environ.get("ROCM_PATH")
+            version = _get_rocm_version_from_dir(rocm_path_env)
+            if version:
+                info[AMDVariantFeatureKey.ROCM_VERSION] = version
     if AMDVariantFeatureKey.GFX_ARCH not in info:
         # FIXME: This approach to querying GFX is technically more preferred.
         from_agent = _get_gfx_from_agent_enumerator()
@@ -281,6 +311,7 @@ def get_system_info() -> Dict[str, Any]:
     return info
 
 if __name__ == "__main__":
+    print(f"{_get_rocm_version_from_smi()=}")
     print(f"{_get_info_from_rocminfo()=}")
     print(f"{_get_rocm_version_from_dir()=}")
     print(f"{_get_gfx_from_agent_enumerator()=}")
