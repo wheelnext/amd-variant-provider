@@ -22,7 +22,7 @@ from dataclasses import dataclass
 from functools import cached_property
 from typing import Any, List, Protocol, runtime_checkable
 
-from detect_rocm import get_system_info, ROCmEnvironment, AMDVariantFeatureKey
+from amd_variant_provider.detect_rocm import get_system_info, ROCmEnvironment, AMDVariantFeatureKey, ROCmVersion
 
 logger = logging.getLogger(__name__)
 
@@ -102,19 +102,24 @@ class AMDVariantPlugin:
         if gfx_archs:
             # The list of all detected GFX architectures is provided.
             # The dependency resolver will try to match them.
+            #configs.append(
+            #    VariantFeatureConfig(name=AMDVariantFeatureKey.GFX_ARCH, values=gfx_archs)
+            #)
             for gfx_arch in gfx_archs:
                 configs.append(
-                    VariantFeatureConfig(name=AMDVariantFeatureKey.GFX_ARCH, values=gfx_arch)
+                    VariantFeatureConfig(name=AMDVariantFeatureKey.GFX_ARCH, values=[gfx_arch])
                 )
         # Priority 2: ROCm version (more general)
-        # Type `str`
-        rocm_version = os.environ.get("AMD_VARIANT_PROVIDER_FORCE_ROCM_VERSION")
-        if not rocm_version:
-            # Type `ROCmVersion` defined in detect_rocm.py
+        # Env var is type `str`
+        if rocm_version_env := os.environ.get("AMD_VARIANT_PROVIDER_FORCE_ROCM_VERSION", None):
+            rocm_version_list = rocm_version_env.strip().split('.')
+            assert(len(rocm_version_list) == 3)
+            rocm_version = ROCmVersion(*rocm_version_list)
+        else:
             rocm_version = self._system_info.get(AMDVariantFeatureKey.ROCM_VERSION)
         if rocm_version:
             configs.append(
-                VariantFeatureConfig(name=AMDVariantFeatureKey.ROCM_VERSION, values=[str(rocm_version)])
+                VariantFeatureConfig(name=AMDVariantFeatureKey.ROCM_VERSION, values=[f"{rocm_version.major}.{rocm_version.minor}"])
             )
 
         if configs:
