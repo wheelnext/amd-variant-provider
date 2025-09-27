@@ -55,6 +55,7 @@ class VariantFeatureConfig:
     name: str
     # Acceptable values in priority order for this feature
     values: list[str]
+    multi_value: bool = False
 
 class AMDVariantPlugin:
     """
@@ -62,6 +63,8 @@ class AMDVariantPlugin:
     This class implements the interface expected by the WheelNext standard.
     """
     namespace = "amd"
+    is_build_plugin = False
+
     # WheelNext static plugin API
     dynamic = False
 
@@ -80,9 +83,7 @@ class AMDVariantPlugin:
         """
         return get_system_info()
 
-    def get_supported_configs(
-        self, known_properties: frozenset[VariantPropertyType] | None
-    ) -> list[VariantFeatureConfig]:
+    def get_supported_configs(self) -> list[VariantFeatureConfig]:
         """
         This is the standardized method that `pip` will call.
         """
@@ -107,7 +108,7 @@ class AMDVariantPlugin:
             #)
             for gfx_arch in gfx_archs:
                 configs.append(
-                    VariantFeatureConfig(name=AMDVariantFeatureKey.GFX_ARCH, values=[gfx_arch])
+                    VariantFeatureConfig(name=AMDVariantFeatureKey.GFX_ARCH, values=[gfx_arch], multi_value=True)
                 )
         # Priority 2: ROCm version (more general)
         # Env var is type `str`
@@ -119,7 +120,7 @@ class AMDVariantPlugin:
             rocm_version = self._system_info.get(AMDVariantFeatureKey.ROCM_VERSION)
         if rocm_version:
             configs.append(
-                VariantFeatureConfig(name=AMDVariantFeatureKey.ROCM_VERSION, values=[f"{rocm_version.major}.{rocm_version.minor}"])
+                VariantFeatureConfig(name=AMDVariantFeatureKey.ROCM_VERSION, values=[f"{rocm_version.major}.{rocm_version.minor}"], multi_value=False)
             )
 
         if configs:
@@ -129,36 +130,27 @@ class AMDVariantPlugin:
 
         return configs
 
-    def validate_property(self, variant_property: VariantPropertyType) -> bool:
-        """
-        Validates that a given property is well-formed for the AMD namespace,
-        not its existence on the current system.
-        """
-        assert isinstance(variant_property, VariantPropertyType)
-        assert variant_property.namespace == self.namespace
+    def get_all_configs(self) -> list[VariantFeatureConfig]:
+        return [
+                VariantFeatureConfig(name=AMDVariantFeatureKey.ROCM_VERSION, values=["6.4", "6.3"], multi_value=False),
+                VariantFeatureConfig(name=AMDVariantFeatureKey.GFX_ARCH, values=["gfx900", "gfx906", "gfx908", "gfx90a", "gfx942", "gfx1030", "gfx1100", "gfx1101", "gfx1102", "gfx1200", "gfx1201"], multi_value=True),
+        ]
 
-        feature = variant_property.feature
-        value = variant_property.value
-
-        if feature == AMDVariantFeatureKey.ROCm:
-            # Check if value is like "rocm6.0", "rocm6.1", etc.
-            return bool(re.match(r"^\d+\.\d+$", value))
-        if feature == AMDVariantFeatureKey.GFX:
-            # Check if value is like "gfx90a", "gfx1100", etc.
-            return bool(re.match(r"^gfx\d+[0-9a-f]*$", value))
-
-        logger.warning(
-            f"Unknown variant feature received for validation: "
-            f"`{self.namespace} :: {feature}`.",
-        )
-        return False
 
 def main() -> int:
     """Minimal CLI to print detected configs for debugging)."""
     logging.basicConfig(level=os.environ.get("AMD_VARIANT_PROVIDER_LOGLEVEL", "INFO"))
     plugin = AMDVariantPlugin()
+
+    def print_all_configs() -> None:
+      cfgs = plugin.get_all_configs()
+      for c in cfgs:
+          print(f"{plugin.namespace} :: {c.name} :: {c.values}")
+
+    print_all_configs()
+
     def print_supported_configs() -> None:
-      cfgs = plugin.get_supported_configs(None)
+      cfgs = plugin.get_supported_configs()
       for c in cfgs:
           print(f"{plugin.namespace} :: {c.name} :: {c.values}")
 
