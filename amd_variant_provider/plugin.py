@@ -106,10 +106,9 @@ class AMDVariantPlugin:
             #configs.append(
             #    VariantFeatureConfig(name=AMDVariantFeatureKey.GFX_ARCH, values=gfx_archs)
             #)
-            for gfx_arch in gfx_archs:
-                configs.append(
-                    VariantFeatureConfig(name=AMDVariantFeatureKey.GFX_ARCH, values=[gfx_arch], multi_value=True)
-                )
+            configs.append(
+                VariantFeatureConfig(name=AMDVariantFeatureKey.GFX_ARCH, values=gfx_archs, multi_value=True)
+            )
         # Priority 2: ROCm version (more general)
         # Env var is type `str`
         if rocm_version_env := os.environ.get("AMD_VARIANT_PROVIDER_FORCE_ROCM_VERSION", None):
