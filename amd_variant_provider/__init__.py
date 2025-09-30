@@ -21,6 +21,6 @@ WheelNext Variant Provider for AMD ROCm"
 #
 # In the initial (but production-ready) implementation of AMD WheelNext Variant Provider plugin,
 # as there are no external Python dependencies, no need to do vendoring.
-__version__ = "0.0.1"
+__version__ = "0.0.2"
 __description__ = "A WheelNext Variant Provider for AMD ROCm"
 __all__ = ["__version__", "__description__"]
