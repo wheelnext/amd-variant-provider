@@ -19,7 +19,7 @@ import os
 import sys
 import re
 from dataclasses import dataclass
-from functools import cached_property
+from functools import cache
 from typing import Any, List, Protocol, runtime_checkable
 
 from amd_variant_provider.detect_rocm import get_system_info, ROCmEnvironment, AMDVariantFeatureKey, ROCmVersion
@@ -31,23 +31,6 @@ logger = logging.getLogger(__name__)
 # It's a core library that the package manager (like `pip`) would use to interpret the provider's complex output.
 # However, `variantlib` is optionally used. Why it's optional is to avoid a direct dependency on it, which makes the provider self-contained.
 # Such a dependency is risky for a low-level packaging plugin. It could create version conflicts or complicate the bootstrap process where `pip` needs to install and run the provider before other packages.
-# `class VariantPropertyType(Protocol)` is thus defined and acts as a local blueprint or contract, to describe the shape of the data expected.
-@runtime_checkable
-class VariantPropertyType(Protocol):
-    @property
-    def namespace(self) -> str:
-        """Namespace (from plugin)"""
-        raise NotImplementedError
-
-    @property
-    def feature(self) -> str:
-        """Feature name (within the namespace)"""
-        raise NotImplementedError
-
-    @property
-    def value(self) -> str:
-        """Feature value"""
-        raise NotImplementedError
 
 # This `dataclass` defines the structure that `pip` expects.
 # It must have a `.name` and a `.values` attribute.
@@ -77,18 +60,21 @@ class AMDVariantPlugin:
         parts = re.split(r"[,\s;]+", env_val.strip())
         return [p for p in (s.strip() for s in parts) if p]
 
-    @cached_property
-    def _system_info(self) -> dict[str, Any]:
+    @staticmethod
+    @cache
+    def _system_info() -> dict[str, Any]:
         """
         Probe the system once and cache the result.
         """
         return get_system_info()
 
-    def get_supported_configs(self) -> list[VariantFeatureConfig]:
+    @classmethod
+    @cache
+    def get_supported_configs(cls) -> list[VariantFeatureConfig]:
         """
         This is the standardized method that `pip` will call.
         """
-        logger.info(f"[{self.namespace}-variant-provider] Running system detection.")
+        logger.info(f"[{cls.namespace}-variant-provider] Running system detection.")
 
         configs: list[VariantFeatureConfig] = []
 
@@ -96,9 +82,9 @@ class AMDVariantPlugin:
         # E.g., dGPU might be preferred over iGPU; PCIe vs. APU.
         env_gfx = os.environ.get("AMD_VARIANT_PROVIDER_FORCE_GFX_ARCH")
         if not env_gfx:
-            gfx_archs = self._system_info.get(AMDVariantFeatureKey.GFX_ARCH)
+            gfx_archs = cls._system_info().get(AMDVariantFeatureKey.GFX_ARCH)
         else:
-            gfx_archs = self._parse_list_env(env_gfx);
+            gfx_archs = cls._parse_list_env(env_gfx);
 
         # Priority 1: GFX architecture (most specific)
         if gfx_archs:
@@ -117,20 +103,22 @@ class AMDVariantPlugin:
             assert(len(rocm_version_list) == 3)
             rocm_version = ROCmVersion(*rocm_version_list)
         else:
-            rocm_version = self._system_info.get(AMDVariantFeatureKey.ROCM_VERSION)
+            rocm_version = cls._system_info().get(AMDVariantFeatureKey.ROCM_VERSION)
         if rocm_version:
             configs.append(
                 VariantFeatureConfig(name=AMDVariantFeatureKey.ROCM_VERSION, values=[f"{rocm_version.major}.{rocm_version.minor}"], multi_value=False)
             )
 
         if configs:
-            logger.info(f"[{self.namespace}-variant-provider] Detected features: {configs}")
+            logger.info(f"[{cls.namespace}-variant-provider] Detected features: {configs}")
         else:
-            logger.warning(f"[{self.namespace}-variant-provider] No AMD features detected.")
+            logger.warning(f"[{cls.namespace}-variant-provider] No AMD features detected.")
 
         return configs
 
-    def get_all_configs(self) -> list[VariantFeatureConfig]:
+    @classmethod
+    @cache
+    def get_all_configs(cls) -> list[VariantFeatureConfig]:
         return [
                 VariantFeatureConfig(name=AMDVariantFeatureKey.ROCM_VERSION, values=[f"7.{i}" for i in range(10, -1, -1)] + ["6.4", "6.3"], multi_value=False),
                 VariantFeatureConfig(name=AMDVariantFeatureKey.GFX_ARCH, values=["gfx900", "gfx906", "gfx908", "gfx90a", "gfx942", "gfx1030", "gfx1100", "gfx1101", "gfx1102", "gfx1200", "gfx1201"], multi_value=True),
