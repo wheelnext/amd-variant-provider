@@ -24,6 +24,7 @@ from typing import Any, List, Protocol, runtime_checkable
 
 from amd_variant_provider.detect_rocm import get_system_info, ROCmEnvironment, AMDVariantFeatureKey, ROCmVersion
 
+logging.basicConfig(level=os.environ.get("AMD_VARIANT_PROVIDER_LOGLEVEL", "INFO"))
 logger = logging.getLogger(__name__)
 
 # `variantlib` (and its `VariantProperty`) is a tool for managing complex, structured hardware properties.
@@ -131,7 +132,7 @@ class AMDVariantPlugin:
 
     def get_all_configs(self) -> list[VariantFeatureConfig]:
         return [
-                VariantFeatureConfig(name=AMDVariantFeatureKey.ROCM_VERSION, values=["6.4", "6.3"], multi_value=False),
+                VariantFeatureConfig(name=AMDVariantFeatureKey.ROCM_VERSION, values=[f"7.{i}" for i in range(10, -1, -1)] + ["6.4", "6.3"], multi_value=False),
                 VariantFeatureConfig(name=AMDVariantFeatureKey.GFX_ARCH, values=["gfx900", "gfx906", "gfx908", "gfx90a", "gfx942", "gfx1030", "gfx1100", "gfx1101", "gfx1102", "gfx1200", "gfx1201"], multi_value=True),
         ]
 
