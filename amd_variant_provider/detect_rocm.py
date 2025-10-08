@@ -99,7 +99,7 @@ def _get_amdgpu_kmd_version() -> Optional[KMDVersion]:
             check=True,
             timeout=10,
         )
-        match = re.search(r"^version:\s*(\d+)\.(\d+).(\d+))", result.stdout, re.MULTILINE)
+        match = re.search(r"^version:\s*(\d+)\.(\d+).(\d+)", result.stdout, re.MULTILINE)
         if match:
             return KMDVersion(*map(int, match.groups()))
     except (FileNotFoundError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
